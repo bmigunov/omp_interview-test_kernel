@@ -5,10 +5,10 @@
  */
 
 
-#include <asm/uaccess.h>  /* Определение функции put_user */
-#include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/fs.h>
+#include <asm/uaccess.h>  /* Определение функции put_user */
 
 #define SUCCESS 0
 #define BUF_LEN 80            /* Максимальная длина сообщения */
@@ -72,9 +72,7 @@ void cleanup_module(void)
     /*
      *  Отключение устройства
      */
-    int ret = unregister_chrdev(Major, DEVICE_NAME);
-    if(ret < 0)
-    printk("Error in unregister_chrdev: %d\n", ret);
+    unregister_chrdev(Major, DEVICE_NAME);
 }
 
 
