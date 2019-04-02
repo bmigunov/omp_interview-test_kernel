@@ -1,11 +1,13 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/uaccess.h>
+#include <linux/cdev.h>
 #include <linux/types.h>
 #include <linux/moduleparam.h>
+#include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
-#include <asm/uaccess.h>
 
 #define VCHARDEV_LICENSE "Dual BSD/GPL"
 #define VCHARDEV_AUTHOR "Bogdan Migunov <bogdanmigunov@yandex.ru>"
@@ -26,5 +28,5 @@ static ssize_t vchardev_write(struct file *, const char *, size_t, loff_t *);
 
 struct vchardev
 {
-    int stub;
+    char *cbuf;
 };
