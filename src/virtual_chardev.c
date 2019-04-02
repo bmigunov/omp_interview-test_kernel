@@ -5,6 +5,12 @@
 
 static unsigned int cbuf_size = DEFAULT_CBUF_SIZE;
 module_param(cbuf_size, uint, S_IRUGO);
+static dev_t dev;
+
+static struct vchardev vchardev_glob =
+{
+    .stub = 0,
+};
 
 static struct file_operations vchardev_fops =
 {
@@ -18,8 +24,18 @@ static struct file_operations vchardev_fops =
 
 static int __init vchardev_initialize(void)
 {
+    int result;
+
     printk(KERN_WARNING "Initializing virtual character device module...\n");
     printk(KERN_DEBUG "Circular buffer size parameter: %d\n", cbuf_size);
+
+    printk(KERN_DEBUG "Allocating device numbers\n");
+    result = alloc_chrdev_region(&dev, 0, 1, VCHARDEV_NAME);
+    if(result < 0)
+    {
+        printk(KERN_ERR "Unable to allocate device numbers\n");
+        return result;
+    }
 
     return 0;
 }
@@ -27,6 +43,9 @@ static int __init vchardev_initialize(void)
 static void __exit vchardev_cleanup(void)
 {
     printk(KERN_WARNING "Cleaning everything up and shutting down...\n");
+
+    printk(KERN_DEBUG "Unregistering device numbers\n");
+    unregister_chrdev_region(dev, 1);
 }
 
 
