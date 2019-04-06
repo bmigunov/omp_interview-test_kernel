@@ -8,6 +8,7 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
+#include <linux/string.h>
 
 #define VCHARDEV_LICENSE "Dual BSD/GPL"
 #define VCHARDEV_AUTHOR "Bogdan Migunov <bogdanmigunov@yandex.ru>"

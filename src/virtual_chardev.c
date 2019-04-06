@@ -90,22 +90,52 @@ static int vchardev_release(struct inode *inode, struct file *filp)
 static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
                              loff_t *offset)
 {
+    unsigned long long int offset_internal = vchardev_glob.cbuf.tail;
+
     printk(KERN_DEBUG "Someone is trying to read from the device file.\n");
 
-    if(*offset > buffer_size)
+    if(*offset >= buffer_size)
     {
-        return 0;
+        offset_internal += *offset % buffer_size;
     }
-    if(*offset + len > buffer_size)
+    else
     {
-        len = buffer_size - *offset;
+        offset_internal += *offset;
     }
+    if(offset_internal >= buffer_size)
+    {
+        offset_internal = offset_internal % buffer_size;
+    }
+    printk(KERN_DEBUG "Read offset %llu\n", offset_internal);
 
-    printk(KERN_DEBUG "Copying data to user\n");
-    if(copy_to_user(buffer, vchardev_glob.cbuf.buffer, len))
+    printk(KERN_DEBUG "Pre-read tail position: %lu; Pre-read head position: %lu\n",
+           vchardev_glob.cbuf.tail, vchardev_glob.cbuf.head);
+
+    if(offset_internal + len < buffer_size)
     {
-        printk(KERN_ERR "READ FAILURE\n");
-        return -EFAULT;
+        if(copy_to_user(buffer, vchardev_glob.cbuf.buffer + offset_internal,
+                        len))
+        {
+            return -EFAULT;
+        }
+        memset(vchardev_glob.cbuf.buffer + offset_internal, '\0', len);
+        vchardev_glob.cbuf.tail = offset_internal + len;
+    }
+    else
+    {
+        len = buffer_size;
+        if(copy_to_user(buffer, vchardev_glob.cbuf.buffer + offset_internal,
+                        len - offset_internal))
+        {
+            return -EFAULT;
+        }
+        if(copy_to_user(buffer + len - offset_internal, vchardev_glob.cbuf.buffer,
+                        offset_internal))
+        {
+            return -EFAULT;
+        }
+        memset(vchardev_glob.cbuf.buffer, '\0', buffer_size);
+        vchardev_glob.cbuf.tail = offset_internal;
     }
 
     *offset += len;
