@@ -3,13 +3,15 @@
 
 
 
-static unsigned int cbuf_size = DEFAULT_CBUF_SIZE;
-module_param(cbuf_size, uint, S_IRUGO);
+static unsigned int buffer_size = DEFAULT_BUFFER_SIZE;
+module_param(buffer_size, uint, S_IRUGO);
 static dev_t dev;
 
 static struct vchardev vchardev_glob =
 {
-    .cbuf = NULL,
+    .cbuf.buffer = NULL,
+    .cbuf.head =   0,
+    .cbuf.tail =   0,
 };
 static struct file_operations vchardev_fops =
 {
@@ -28,9 +30,9 @@ static int __init vchardev_initialize(void)
 
     printk(KERN_WARNING "Initializing virtual character device module...\n");
     printk(KERN_DEBUG "Circular buffer size parameter: %d\nAllocating memory\n",
-           cbuf_size);
-    vchardev_glob.cbuf = kmalloc(cbuf_size, GFP_KERNEL);
-    memset(vchardev_glob.cbuf, 0, cbuf_size);
+           buffer_size);
+    vchardev_glob.cbuf.buffer = kmalloc(buffer_size, GFP_KERNEL);
+    memset(vchardev_glob.cbuf.buffer, 0, buffer_size);
 
     printk(KERN_DEBUG "Allocating device numbers\n");
     result = alloc_chrdev_region(&dev, 0, 1, VCHARDEV_NAME);
@@ -67,7 +69,7 @@ static void __exit vchardev_cleanup(void)
     unregister_chrdev_region(dev, 1);
 
     printk(KERN_DEBUG "Freeing allocated buffer\n");
-    kfree(vchardev_glob.cbuf);
+    kfree(vchardev_glob.cbuf.buffer);
 }
 
 
@@ -90,17 +92,17 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
 {
     printk(KERN_DEBUG "Someone is trying to read from the device file.\n");
 
-    if(*offset > cbuf_size)
+    if(*offset > buffer_size)
     {
         return 0;
     }
-    if(*offset + len > cbuf_size)
+    if(*offset + len > buffer_size)
     {
-        len = cbuf_size - *offset;
+        len = buffer_size - *offset;
     }
 
     printk(KERN_DEBUG "Copying data to user\n");
-    if(copy_to_user(buffer, vchardev_glob.cbuf, len))
+    if(copy_to_user(buffer, vchardev_glob.cbuf.buffer, len))
     {
         printk(KERN_ERR "READ FAILURE\n");
         return -EFAULT;
@@ -113,16 +115,96 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
 static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
                               size_t len, loff_t *offset)
 {
+    unsigned long long int offset_internal = vchardev_glob.cbuf.head;
+    unsigned int i, leftover;
+
     printk(KERN_DEBUG "Someone is trying to write to the device file.\n");
 
-    printk(KERN_DEBUG "Copying data from user\n");
-    if(copy_from_user(vchardev_glob.cbuf, buffer, len))
+    if(*offset >= buffer_size)
     {
-        printk(KERN_ERR "WRITE FAILURE\n");
-        return -EFAULT;
+        offset_internal += *offset % buffer_size;
+    }
+    else
+    {
+        offset_internal += *offset;
+    }
+    if(offset_internal >= buffer_size)
+    {
+        offset_internal = offset_internal % buffer_size;
+    }
+    printk(KERN_DEBUG "Offset: %llu\n", offset_internal);
+
+    printk(KERN_DEBUG "Pre-write head position: %lu; Pre-write tail position: %lu\n",
+           vchardev_glob.cbuf.head, vchardev_glob.cbuf.tail);
+
+    if(offset_internal + len <= buffer_size)
+    {
+        if(copy_from_user(vchardev_glob.cbuf.buffer + offset_internal, buffer,
+                          len))
+        {
+            return -EFAULT;
+        }
+        vchardev_glob.cbuf.head = offset_internal + len;
+    }
+    else
+    {
+        leftover = (offset_internal + len) % buffer_size;
+
+        if(len <= buffer_size)
+        {
+            if(copy_from_user(vchardev_glob.cbuf.buffer + offset_internal,
+                              buffer, len - leftover))
+            {
+                return -EFAULT;
+            }
+            if(copy_from_user(vchardev_glob.cbuf.buffer,
+                              buffer + len - leftover,
+                              leftover))
+            {
+                return -EFAULT;
+            }
+        }
+        else
+        {
+            printk(KERN_DEBUG "Buffer overflow case\nLeftover: %d", leftover);
+
+            for(i = 0; i < (len + offset_internal) / buffer_size; ++i)
+            {
+                printk(KERN_DEBUG "i: %d; copying first part\n", i);
+                if(copy_from_user(vchardev_glob.cbuf.buffer + offset_internal,
+                                  buffer + i * buffer_size,
+                                  buffer_size - offset_internal))
+                {
+                    return -EFAULT;
+                }
+                if(i != (len + offset_internal) / buffer_size - 1)
+                {
+                    printk (KERN_DEBUG "copying second part\n");
+                    if(copy_from_user(vchardev_glob.cbuf.buffer,
+                                      buffer + (i + 1) * buffer_size - offset_internal,
+                                      offset_internal))
+                    {
+                        return -EFAULT;
+                    }
+                }
+            }
+            printk("i: %d; copying leftover\n", i);
+            if(copy_from_user(vchardev_glob.cbuf.buffer,
+                              buffer + i * buffer_size - offset_internal,
+                              leftover))
+            {
+                return -EFAULT;
+            }
+        }
+
+        vchardev_glob.cbuf.tail = vchardev_glob.cbuf.head = leftover;
     }
 
-    offset += len;
+    *offset += len;
+
+    printk(KERN_DEBUG "Post-write head position: %lu; Post-write tail position: %lu\n",
+           vchardev_glob.cbuf.head, vchardev_glob.cbuf.tail);
+    printk(KERN_DEBUG "Chars written: %lu\n", len);
 
     return len;
 }
@@ -132,6 +214,6 @@ module_init(vchardev_initialize);
 module_exit(vchardev_cleanup);
 
 MODULE_LICENSE(VCHARDEV_LICENSE);
+MODULE_VERSION(VCHARDEV_VERSION);
 MODULE_AUTHOR(VCHARDEV_AUTHOR);
 MODULE_DESCRIPTION(VCHARDEV_DESC);
-MODULE_VERSION(VCHARDEV_VERSION);
