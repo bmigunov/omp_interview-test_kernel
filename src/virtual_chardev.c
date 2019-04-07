@@ -15,11 +15,12 @@ static struct vchardev vchardev_glob =
 };
 static struct file_operations vchardev_fops =
 {
-    .owner =   THIS_MODULE,
-    .open =    vchardev_open,
-    .release = vchardev_release,
-    .read =    vchardev_read,
-    .write =   vchardev_write,
+    .owner =          THIS_MODULE,
+    .open =           vchardev_open,
+    .release =        vchardev_release,
+    .read =           vchardev_read,
+    .write =          vchardev_write,
+    .unlocked_ioctl = vchardev_ioctl,
 };
 static struct cdev this_cdev;
 
@@ -33,6 +34,8 @@ static int __init vchardev_initialize(void)
            buffer_size);
     vchardev_glob.cbuf.buffer = kmalloc(buffer_size, GFP_KERNEL);
     memset(vchardev_glob.cbuf.buffer, 0, buffer_size);
+    init_waitqueue_head(&vchardev_glob.inq);
+    init_waitqueue_head(&vchardev_glob.outq);
 
     printk(KERN_DEBUG "Allocating device numbers\n");
     result = alloc_chrdev_region(&dev, 0, 1, VCHARDEV_NAME);
@@ -111,6 +114,22 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
     printk(KERN_DEBUG "Pre-read tail position: %lu; Pre-read head position: %lu\n",
            vchardev_glob.cbuf.tail, vchardev_glob.cbuf.head);
 
+    while(vchardev_glob.cbuf.tail == vchardev_glob.cbuf.head)
+    {
+        if(filp->f_flags & O_NONBLOCK)
+        {
+            break;
+        }
+        else
+        {
+            printk(KERN_DEBUG "Circular buffer is empty. Sending read to sleep, O_NONBLOCK is set\n");
+            if(wait_event_interruptible(vchardev_glob.inq,
+                                        (vchardev_glob.cbuf.tail != vchardev_glob.cbuf.head)))
+            {
+                return -ERESTARTSYS;
+            }
+        }
+    }
     if(offset_internal + len < buffer_size)
     {
         if(copy_to_user(buffer, vchardev_glob.cbuf.buffer + offset_internal,
@@ -135,10 +154,11 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
             return -EFAULT;
         }
         memset(vchardev_glob.cbuf.buffer, '\0', buffer_size);
-        vchardev_glob.cbuf.tail = offset_internal;
+        vchardev_glob.cbuf.tail = vchardev_glob.cbuf.head;
     }
 
     *offset += len;
+    wake_up_interruptible(&vchardev_glob.outq);
     return len;
 }
 
@@ -167,6 +187,22 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
     printk(KERN_DEBUG "Pre-write head position: %lu; Pre-write tail position: %lu\n",
            vchardev_glob.cbuf.head, vchardev_glob.cbuf.tail);
 
+    while(vchardev_glob.cbuf.head == vchardev_glob.cbuf.tail - 1)
+    {
+        if(filp->f_flags & O_NONBLOCK)
+        {
+            break;
+        }
+        else
+        {
+            printk(KERN_DEBUG "O_NONBLOCK write\n Sending write to sleep, circular buffer is full\n");
+            if(wait_event_interruptible(vchardev_glob.outq,
+                                        (vchardev_glob.cbuf.head != vchardev_glob.cbuf.tail - 1)))
+            {
+                return -ERESTARTSYS;
+            }
+        }
+    }
     if(offset_internal + len <= buffer_size)
     {
         if(copy_from_user(vchardev_glob.cbuf.buffer + offset_internal, buffer,
@@ -227,7 +263,8 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
             }
         }
 
-        vchardev_glob.cbuf.tail = vchardev_glob.cbuf.head = leftover;
+        vchardev_glob.cbuf.head = leftover;
+        vchardev_glob.cbuf.tail = vchardev_glob.cbuf.head + 1;
     }
 
     *offset += len;
@@ -236,7 +273,14 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
            vchardev_glob.cbuf.head, vchardev_glob.cbuf.tail);
     printk(KERN_DEBUG "Chars written: %lu\n", len);
 
+    wake_up_interruptible(&vchardev_glob.inq);
     return len;
+}
+
+long int vchardev_ioctl(struct file *filp, unsigned int cmd,
+                        unsigned long arg)
+{
+    return 0;
 }
 
 
