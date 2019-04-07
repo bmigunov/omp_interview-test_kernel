@@ -97,6 +97,10 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
 
     printk(KERN_DEBUG "Someone is trying to read from the device file.\n");
 
+    vchardev_glob.last_op.pid = current->pid;
+    vchardev_glob.last_op.uid = __kuid_val(current->real_cred->uid);
+    vchardev_glob.last_op.time = current_kernel_time();
+
     if(*offset >= buffer_size)
     {
         offset_internal += *offset % buffer_size;
@@ -169,6 +173,10 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
     unsigned int i, leftover;
 
     printk(KERN_DEBUG "Someone is trying to write to the device file.\n");
+
+    vchardev_glob.last_op.pid = current->pid;
+    vchardev_glob.last_op.uid = __kuid_val(current->cred->uid);
+    vchardev_glob.last_op.time = current_kernel_time();
 
     if(*offset >= buffer_size)
     {
@@ -280,7 +288,57 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
 long int vchardev_ioctl(struct file *filp, unsigned int cmd,
                         unsigned long arg)
 {
-    return 0;
+    long int ret = 0;
+    int err = 0;
+
+    printk(KERN_DEBUG "IOCTL\n");
+
+    if(_IOC_TYPE(cmd) != VCHARDEV_IOC_MAGIC)
+    {
+        return -ENOTTY;
+    }
+    if(_IOC_NR(cmd) > VCHARDEV_IOC_MAXNR)
+    {
+        return -ENOTTY;
+    }
+
+    if(_IOC_DIR(cmd) & _IOC_READ)
+    {
+        err = !access_ok(VERIFY_WRITE, (void __user *) arg, _IOC_SIZE(cmd));
+    }
+    if(err)
+    {
+        printk(KERN_ERR "IOCTL: input ptr is unaccessible\n");
+        return -EFAULT;
+    }
+
+    switch(cmd)
+    {
+        case VCHARDEV_IOC_SET_BLOCK:
+            filp->f_flags &= ~O_NONBLOCK;
+            break;
+
+        case VCHARDEV_IOC_SET_NONBLOCK:
+            filp->f_flags |= O_NONBLOCK;
+            break;
+
+        case VCHARDEV_IOC_GET_LAST_OP:
+            printk(KERN_DEBUG "GET_LAST_OP\n");
+
+            ret = copy_to_user((struct op_info *) arg, &vchardev_glob.last_op,
+                               sizeof(struct op_info));
+            if(ret)
+            {
+                printk(KERN_ERR "IOCTL: unable to copy struct op_info to userspace\n");
+                return -EFAULT;
+            }
+            break;
+
+        default:
+            return -ENOTTY;
+    }
+
+    return ret;
 }
 
 
