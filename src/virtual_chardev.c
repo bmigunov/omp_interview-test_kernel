@@ -1,4 +1,16 @@
 #include "virtual_chardev.h"
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/uaccess.h>
+#include <linux/cdev.h>
+#include <linux/moduleparam.h>
+#include <linux/slab.h>
+#include <linux/ioctl.h>
+#include <linux/cred.h>
+#include <linux/sched.h>
+#include <linux/wait.h>
+#include <linux/string.h>
 
 
 

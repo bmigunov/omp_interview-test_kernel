@@ -1,17 +1,12 @@
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/uaccess.h>
-#include <linux/cdev.h>
-#include <linux/types.h>
-#include <linux/moduleparam.h>
-#include <linux/slab.h>
-#include <linux/ioctl.h>
-#include <linux/cred.h>
-#include <linux/sched.h>
-#include <linux/wait.h>
+#ifndef __VIRTUAL_CHARDEV_H
+#define __VIRTUAL_CHARDEV_H
+
+#define VIRTUAL_CHARDEV_KERNMOD
+#define VIRTUAL_CHARDEV_DEBUG
+
+
+#include "virtual_chardev_ioctl.h"
 #include <linux/fs.h>
-#include <linux/string.h>
 
 
 #define VCHARDEV_LICENSE "Dual BSD/GPL"
@@ -21,12 +16,6 @@
 #define VCHARDEV_NAME    "vchardev"
 
 #define DEFAULT_BUFFER_SIZE 8
-
-#define VCHARDEV_IOC_MAGIC        '@'
-#define VCHARDEV_IOC_SET_BLOCK    _IO(VCHARDEV_IOC_MAGIC, 0)
-#define VCHARDEV_IOC_SET_NONBLOCK _IO(VCHARDEV_IOC_MAGIC, 1)
-#define VCHARDEV_IOC_GET_LAST_OP  _IOR(VCHARDEV_IOC_MAGIC, 2, struct op_info)
-#define VCHARDEV_IOC_MAXNR        2
 
 
 
@@ -45,13 +34,6 @@ struct circular_buffer
     unsigned long int tail;
 };
 
-struct op_info
-{
-    struct timespec time;
-    pid_t           pid;
-    uid_t           uid;
-};
-
 struct vchardev
 {
     struct circular_buffer cbuf;
@@ -60,3 +42,6 @@ struct vchardev
     wait_queue_head_t      inq;
     wait_queue_head_t      outq;
 };
+
+
+#endif /* __VIRTUAL_CHARDEV_H */
