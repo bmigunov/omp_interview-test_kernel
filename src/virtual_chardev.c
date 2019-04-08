@@ -42,28 +42,33 @@ static int __init vchardev_initialize(void)
     int result;
 
     printk(KERN_WARNING "Initializing virtual character device module...\n");
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Circular buffer size parameter: %d\nAllocating memory\n",
            buffer_size);
+#endif /* VIRTUAL_CHARDEV_DEBUG */
     vchardev_glob.cbuf.buffer = kmalloc(buffer_size, GFP_KERNEL);
     memset(vchardev_glob.cbuf.buffer, 0, buffer_size);
     init_waitqueue_head(&vchardev_glob.inq);
     init_waitqueue_head(&vchardev_glob.outq);
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Allocating device numbers\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
     result = alloc_chrdev_region(&dev, 0, 1, VCHARDEV_NAME);
     if(result < 0)
     {
         printk(KERN_ERR "Unable to allocate device numbers\n");
         return result;
     }
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Major number: %d;\nMinor number: %d\n", MAJOR(dev),
            MINOR(dev));
 
     printk(KERN_DEBUG "cdev initialization\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
     cdev_init(&this_cdev, &vchardev_fops);
     this_cdev.owner = THIS_MODULE;
     this_cdev.ops = &vchardev_fops;
-    printk(KERN_DEBUG "cdev addition\n");
     result = cdev_add(&this_cdev, dev, 1);
     if(result)
     {
@@ -77,27 +82,37 @@ static void __exit vchardev_cleanup(void)
 {
     printk(KERN_WARNING "Cleaning everything up and shutting down...\n");
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Deleting cdev\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
     cdev_del(&this_cdev);
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Unregistering device numbers\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
     unregister_chrdev_region(dev, 1);
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Freeing allocated buffer\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
     kfree(vchardev_glob.cbuf.buffer);
 }
 
 
 static int vchardev_open(struct inode *inode, struct file *filp)
 {
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Someone is trying to open the device file.\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     return 0;
 }
 
 static int vchardev_release(struct inode *inode, struct file *filp)
 {
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Someone is trying to close the device file.\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     return 0;
 }
@@ -107,7 +122,9 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
 {
     unsigned long long int offset_internal = vchardev_glob.cbuf.tail;
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Someone is trying to read from the device file.\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     vchardev_glob.last_op.pid = current->pid;
     vchardev_glob.last_op.uid = __kuid_val(current->real_cred->uid);
@@ -125,10 +142,11 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
     {
         offset_internal = offset_internal % buffer_size;
     }
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Read offset %llu\n", offset_internal);
-
     printk(KERN_DEBUG "Pre-read tail position: %lu; Pre-read head position: %lu\n",
            vchardev_glob.cbuf.tail, vchardev_glob.cbuf.head);
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     while(vchardev_glob.cbuf.tail == vchardev_glob.cbuf.head)
     {
@@ -138,7 +156,9 @@ static ssize_t vchardev_read(struct file *filp, char __user *buffer, size_t len,
         }
         else
         {
+#ifdef VIRTUAL_CHARDEV_DEBUG
             printk(KERN_DEBUG "Circular buffer is empty. Sending read to sleep, O_NONBLOCK is set\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
             if(wait_event_interruptible(vchardev_glob.inq,
                                         (vchardev_glob.cbuf.tail != vchardev_glob.cbuf.head)))
             {
@@ -184,7 +204,9 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
     unsigned long long int offset_internal = vchardev_glob.cbuf.head;
     unsigned int i, leftover;
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Someone is trying to write to the device file.\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     vchardev_glob.last_op.pid = current->pid;
     vchardev_glob.last_op.uid = __kuid_val(current->cred->uid);
@@ -202,10 +224,11 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
     {
         offset_internal = offset_internal % buffer_size;
     }
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Offset: %llu\n", offset_internal);
-
     printk(KERN_DEBUG "Pre-write head position: %lu; Pre-write tail position: %lu\n",
            vchardev_glob.cbuf.head, vchardev_glob.cbuf.tail);
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     while(vchardev_glob.cbuf.head == vchardev_glob.cbuf.tail - 1)
     {
@@ -215,7 +238,9 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
         }
         else
         {
+#ifdef VIRTUAL_CHARDEV_DEBUG
             printk(KERN_DEBUG "O_NONBLOCK write\n Sending write to sleep, circular buffer is full\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
             if(wait_event_interruptible(vchardev_glob.outq,
                                         (vchardev_glob.cbuf.head != vchardev_glob.cbuf.tail - 1)))
             {
@@ -252,11 +277,15 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
         }
         else
         {
+#ifdef VIRTUAL_CHARDEV_DEBUG
             printk(KERN_DEBUG "Buffer overflow case\nLeftover: %d", leftover);
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
             for(i = 0; i < (len + offset_internal) / buffer_size; ++i)
             {
+#ifdef VIRTUAL_CHARDEV_DEBUG
                 printk(KERN_DEBUG "i: %d; copying first part\n", i);
+#endif /* VIRTUAL_CHARDEV_DEBUG */
                 if(copy_from_user(vchardev_glob.cbuf.buffer + offset_internal,
                                   buffer + i * buffer_size,
                                   buffer_size - offset_internal))
@@ -265,7 +294,9 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
                 }
                 if(i != (len + offset_internal) / buffer_size - 1)
                 {
+#ifdef VIRTUAL_CHARDEV_DEBUG
                     printk (KERN_DEBUG "copying second part\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
                     if(copy_from_user(vchardev_glob.cbuf.buffer,
                                       buffer + (i + 1) * buffer_size - offset_internal,
                                       offset_internal))
@@ -274,7 +305,9 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
                     }
                 }
             }
-            printk("i: %d; copying leftover\n", i);
+#ifdef VIRTUAL_CHARDEV_DEBUG
+            printk(KERN_DEBUG "i: %d; copying leftover\n", i);
+#endif /* VIRTUAL_CHARDEV_DEBUG */
             if(copy_from_user(vchardev_glob.cbuf.buffer,
                               buffer + i * buffer_size - offset_internal,
                               leftover))
@@ -289,9 +322,11 @@ static ssize_t vchardev_write(struct file *filp, const char __user *buffer,
 
     *offset += len;
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "Post-write head position: %lu; Post-write tail position: %lu\n",
            vchardev_glob.cbuf.head, vchardev_glob.cbuf.tail);
     printk(KERN_DEBUG "Chars written: %lu\n", len);
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     wake_up_interruptible(&vchardev_glob.inq);
     return len;
@@ -303,7 +338,9 @@ long int vchardev_ioctl(struct file *filp, unsigned int cmd,
     long int ret = 0;
     int err = 0;
 
+#ifdef VIRTUAL_CHARDEV_DEBUG
     printk(KERN_DEBUG "IOCTL\n");
+#endif /* VIRTUAL_CHARDEV_DEBUG */
 
     if(_IOC_TYPE(cmd) != VCHARDEV_IOC_MAGIC)
     {
@@ -335,8 +372,6 @@ long int vchardev_ioctl(struct file *filp, unsigned int cmd,
             break;
 
         case VCHARDEV_IOC_GET_LAST_OP:
-            printk(KERN_DEBUG "GET_LAST_OP\n");
-
             ret = copy_to_user((struct op_info *) arg, &vchardev_glob.last_op,
                                sizeof(struct op_info));
             if(ret)
